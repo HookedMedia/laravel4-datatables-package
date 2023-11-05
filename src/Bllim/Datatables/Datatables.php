@@ -513,8 +513,12 @@ class Datatables
             }
 
             // previous regex #^(\S*?)\s+as\s+(\S*?)$# prevented subqueries and functions from being detected as alias
-            preg_match('#\s+as\s+(\S*?)$#si', $this->columns[$i], $matches);
-            $aliased_ordered_columns[$count] = empty($matches) ? $this->columns[$i] : $matches[1];
+            $columnName = $this->columns[$i];
+            if ($columnName instanceof \Illuminate\Database\Query\Expression) {
+                $columnName = $columnName->getValue(app('db')->getQueryGrammar());
+            }
+            preg_match('#\s+as\s+(\S*?)$#si', $columnName, $matches);
+            $aliased_ordered_columns[$count] = empty($matches) ? $columnName : $matches[1];
             $count++;
         }
 
@@ -653,6 +657,9 @@ class Datatables
     {
         $return = array();
         foreach ($cols as $i => $col) {
+            if ($col instanceof \Illuminate\Database\Query\Expression) {
+                $col = $col->getValue(app('db')->getQueryGrammar());
+            }
             preg_match('#^(.*?)\s+as\s+(\S*?)\s*$#si', $col, $matches);
             if (empty($matches)) {
                 $return[$i] = $use_alias ? $this->getColumnName($col) : $col;
@@ -948,7 +955,7 @@ class Datatables
         // if its a normal query ( no union ) replace the select with static text to improve performance
         $countQuery = clone $query;
         if (!preg_match('/UNION/i', $countQuery->toSql())) {
-            $countQuery->select(DB::raw("'1' as row"));
+            $countQuery->select(DB::raw("count(*) as count_row_table"));
 
             // if query has "having" clause add select columns
             if ($countQuery->havings) {
@@ -984,9 +991,7 @@ class Datatables
         $countQuery->orders = null;
 
         $this->$count = DB::connection($connection)
-            ->table(DB::raw('(' . $countQuery->toSql() . ') AS count_row_table'))
-            ->setBindings($countQuery->getBindings())->count();
-
+            ->select($countQuery->toSql(), $countQuery->getBindings())[0]->count_row_table;
     }
 
     /**
@@ -1000,6 +1005,9 @@ class Datatables
      */
     protected function getColumnName($str)
     {
+        if ($str instanceof \Illuminate\Database\Query\Expression) {
+            $str = $str->getValue(app('db')->getQueryGrammar());
+        }
 
         preg_match('#^(\S*?)\s+as\s+(\S*?)$#si', $str, $matches);
 
